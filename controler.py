@@ -1,6 +1,6 @@
 import io
 import time
-import picamera
+import picamera2
 import numpy as np
 from scipy.ndimage import gaussian_filter
 import imageio
@@ -9,7 +9,7 @@ import cv2
 
 # Preprocessing function with sigma value for testing gaussian smoothing
 def process_frame(frame, sigma=1):
-    # grayscale
+    # grayscalePpp
     gray = np.dot(frame[..., :3], [0.2989, 0.5870, 0.1140])
     
     # Gaussian smoothing
@@ -24,13 +24,13 @@ def process_frame(frame, sigma=1):
 # Video handling
 def capture_frames():
     # Initialize the camera
-    with picamera.PiCamera() as camera:
+    with picamera2.PiCamera() as camera:
         camera.framerate = 30
         camera.resolution = (640, 480)
         time.sleep(2) 
         
 		# initialize stream
-        stream = picamera.array.PiRGBArray(camera, size=(640, 480))
+        stream = picamera2.array.PiRGBArray(camera, size=(640, 480))
         
         for _ in camera.capture_continuous(stream, format="bgr", use_video_port=True):
             # Convert the image to a NumPy array and process it
