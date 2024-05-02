@@ -5,7 +5,8 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 import imageio
 import cv2
-
+import RPi.GPIO as GPIO
+from rpi_ws281x import PixelStrip, Color
 
 # Preprocessing function with sigma value for testing gaussian smoothing
 def process_frame(frame, sigma=1):
@@ -29,9 +30,14 @@ def capture_frames():
     picam2.start()
 
     while True:
+
+        # Capture frames and pre-process them
         frame = picam2.capture_array()
         processed_frame = process_frame(frame)
 
+        # Run algorithms for hand detection
+
+        
         cv2.imshow("Camera", frame)
         cv2.waitKey(1)
 
@@ -40,7 +46,28 @@ def capture_frames():
         cv2.imshow('Processed Frame', processed_frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-        
+
+
+def set_color_and_brightness(color, brightness):
+    strip.setBrightness(brightness)
+    for i in range(strip.numPixels()):
+        strip.setPixelColor(i, color)
+    strip.show()
+
+
+# LED Info
+LED_COUNT = 50     
+LED_PIN = 18          
+LED_FREQ_HZ = 800000 
+LED_DMA = 10          
+LED_BRIGHTNESS = 50  
+LED_INVERT = False  
+LED_CHANNEL = 0       
+
+# create pixel strip
+strip = PixelStrip(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL)
+strip.begin()        
+
 
 # Start capturing frames
 capture_frames()
