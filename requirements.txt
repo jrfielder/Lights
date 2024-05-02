@@ -7,7 +7,3 @@ flask
 opencv-python
 scipy
 scikit-learn
-picamera
-gpiozero
-rpi_ws281x
-adafruit-circuitpython-neopixel
