@@ -7,6 +7,7 @@ import imageio
 import cv2
 import RPi.GPIO as GPIO
 from rpi_ws281x import PixelStrip, Color
+from joblib import load
 
 # Preprocessing function with sigma value for testing gaussian smoothing
 def process_frame(frame, sigma=1):
@@ -37,7 +38,7 @@ def capture_frames():
 
         # Run algorithms for hand detection
 
-        
+
         cv2.imshow("Camera", frame)
         cv2.waitKey(1)
 
