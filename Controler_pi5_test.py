@@ -2,10 +2,7 @@ import cv2
 import numpy as np
 import os
 from skimage.feature import hog
-from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from scipy.ndimage import gaussian_filter
-from tensorflow.keras.layers import Dense, Normalization
-from tensorflow.keras.models import Sequential
 from sklearn.model_selection import train_test_split
 from scipy.ndimage import gaussian_filter
 from gpiozero import PWMLED
