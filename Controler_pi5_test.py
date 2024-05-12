@@ -1,178 +1,48 @@
 import cv2
 import numpy as np
+import os
+import tensorflow as tf
+from skimage.feature import hog
+from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
+from scipy.ndimage import gaussian_filter
+from tensorflow.keras.layers import Dense, Normalization
+from tensorflow.keras.models import Sequential
+from sklearn.model_selection import train_test_split
 from scipy.ndimage import gaussian_filter
 from gpiozero import PWMLED
 import tflite_runtime.interpreter as tflite
 
 
 
-# Preprocessing function with sigma value for testing gaussian smoothing
+# Load a pre-trained VGG16 model without the classifier layers
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+
 def process_frame(frame, sigma=1):
-    # grayscale
-    gray = np.dot(frame[..., :3], [0.2989, 0.5870, 0.1140])
-    
-    # Gaussian smoothing
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = gaussian_filter(gray, sigma=sigma)
-    
-    # Normalize image
-    normalized = (blurred - np.min(blurred)) / (np.max(blurred) - np.min(blurred))
-    normalized = np.ascontiguousarray((normalized * 255).astype(np.uint8))
+    normalized = cv2.normalize(blurred, None, 0, 255, cv2.NORM_MINMAX)
     return normalized
 
-def gaussian_kernel(size, sigma=1):
-    """Generates a Gaussian kernel."""
-    size = int(size) // 2
-    x, y = np.mgrid[-size:size+1, -size:size+1]
-    normal = 1 / (2.0 * np.pi * sigma**2)
-    g = np.exp(-((x**2 + y**2) / (2.0*sigma**2))) * normal
-    return g
+def extract_features(image_path):
+    image = cv2.imread(image_path)
+    image = cv2.resize(image, (224, 224))
+    image_vgg = preprocess_input(image.astype('float32'))
+    features_cnn = base_model.predict(np.expand_dims(image_vgg, axis=0)).flatten()
 
-def apply_gaussian_smoothing(image, kernel_size, sigma):
-    """Applies Gaussian smoothing using a Gaussian kernel."""
-    kernel = gaussian_kernel(kernel_size, sigma)
-    padded_image = np.pad(image, [(kernel.shape[0]//2, kernel.shape[0]//2), 
-                                  (kernel.shape[1]//2, kernel.shape[1]//2)], 
-                                  mode='constant', constant_values=0)
-    result = np.zeros_like(image)
+    # For color images, ensure you are using the right axis for skimage
+    # Here, convert BGR to RGB since skimage expects images in RGB
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    # HOG features for color image
+    features_hog, _ = hog(image_rgb, orientations=9, pixels_per_cell=(8, 8),
+                          cells_per_block=(2, 2), visualize=True, channel_axis=-1)
 
-    # Convolution process
-    for i in range(image.shape[0]):
-        for j in range(image.shape[1]):
-            result[i, j] = np.sum(padded_image[i:i+kernel.shape[0], j:j+kernel.shape[1]] * kernel)
-    return result
+    gray_image = process_frame(image)  # still using grayscale for Canny
+    edges = cv2.Canny(gray_image, 100, 200)
+    features_canny = edges.flatten()
 
-def frame_compare(prev_frame, current_frame, threshold=30):
-    diff = np.abs(prev_frame - current_frame)
-    diff[diff < threshold] = 0
-    diff[diff >= threshold] = 255
-    return diff
+    return np.concatenate([features_cnn, features_hog, features_canny])
 
-def compute_gradients_simple(image):
-    """ Compute the gradient image in x and y direction """
-    gx = np.empty(image.shape, dtype=np.float32)
-    gy = np.empty(image.shape, dtype=np.float32)
-    gx[:, :-1] = np.diff(image, axis=1)  # horizontal gradient
-    gy[:-1, :] = np.diff(image, axis=0)  # vertical gradient
-
-    gx[:, -1] = 0  # edges to zero
-    gy[-1, :] = 0  # edges to zero
-
-    magnitude = np.sqrt(gx**2 + gy**2)
-    orientation = np.arctan2(gy, gx) * (180 / np.pi) % 180
-    return magnitude, orientation
-
-def cell_histogram(magnitude, orientation, cell_size, bin_size):
-    """ Create histograms of gradients in cells """
-    bins = np.arange(0, 180+bin_size, bin_size)
-    cell_mag = np.zeros((int(magnitude.shape[0] / cell_size), int(magnitude.shape[1] / cell_size), len(bins)-1))
-
-    for i in range(cell_mag.shape[0]):
-        for j in range(cell_mag.shape[1]):
-            cell_m = magnitude[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            cell_o = orientation[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            cell_hist, _ = np.histogram(cell_o, bins=bins, weights=cell_m, density=True)
-            cell_mag[i, j, :] = cell_hist
-
-    return cell_mag
-
-def hog_features(image, cell_size=8, bin_size=20):
-    """ Calculate HOG features for the whole image """
-    magnitude, orientation = compute_gradients_simple(image)
-    hog_image = cell_histogram(magnitude, orientation, cell_size, bin_size)
-    # Flatten to make it a single feature vector
-    hog_features = hog_image.ravel()
-    return hog_features
-
-
-def compute_gradients(image):
-    """Compute the image gradients using Sobel filters."""
-    sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
-    sobel_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=np.float32)
-
-    gx = cv2.filter2D(image, -1, sobel_x)
-    gy = cv2.filter2D(image, -1, sobel_y)
-
-    magnitude = np.sqrt(gx**2 + gy**2)
-    orientation = np.arctan2(gy, gx) * (180 / np.pi)
-    return magnitude, orientation % 180
-
-def non_maximum_suppression(magnitude, orientation):
-    """Apply non-maximum suppression to thin the edges."""
-    M, N = magnitude.shape
-    Z = np.zeros((M,N), dtype=np.float32)
-    angle = orientation / 45.0
-    angle = np.round(angle) % 4
-
-    for i in range(1, M-1):
-        for j in range(1, N-1):
-            neighbor_1 = 255
-            neighbor_2 = 255
-
-            # Horizontal edge
-            if angle[i,j] == 0:
-                neighbor_1 = magnitude[i, j+1]
-                neighbor_2 = magnitude[i, j-1]
-            # Diagonal edge
-            elif angle[i,j] == 1:
-                neighbor_1 = magnitude[i+1, j-1]
-                neighbor_2 = magnitude[i-1, j+1]
-            # Vertical edge
-            elif angle[i,j] == 2:
-                neighbor_1 = magnitude[i+1, j]
-                neighbor_2 = magnitude[i-1, j]
-            # Other diagonal edge
-            elif angle[i,j] == 3:
-                neighbor_1 = magnitude[i-1, j-1]
-                neighbor_2 = magnitude[i+1, j+1]
-
-            if magnitude[i,j] >= neighbor_1 and magnitude[i,j] >= neighbor_2:
-                Z[i,j] = magnitude[i,j]
-            else:
-                Z[i,j] = 0
-
-    return Z
-
-def double_threshold(image, low_ratio, high_ratio):
-    """Apply double threshold to determine strong and weak edges."""
-    high_threshold = np.max(image) * high_ratio
-    low_threshold = high_threshold * low_ratio
-
-    M, N = image.shape
-    res = np.zeros((M,N), dtype=np.uint8)
-
-    strong = 255
-    weak = 75
-
-    strong_i, strong_j = np.where(image >= high_threshold)
-    weak_i, weak_j = np.where((image >= low_threshold) & (image < high_threshold))
-
-    res[strong_i, strong_j] = strong
-    res[weak_i, weak_j] = weak
-
-    return res
-
-def hysteresis(image, weak=75, strong=255):
-    """Apply hysteresis to finalize the edge detection."""
-    M, N = image.shape
-    for i in range(1, M-1):
-        for j in range(1, N-1):
-            if image[i, j] == weak:
-                # Check the 8 neighboring cells
-                if ((image[i+1, j-1] == strong) or (image[i+1, j] == strong) or (image[i+1, j+1] == strong) or
-                    (image[i, j-1] == strong) or (image[i, j+1] == strong) or
-                    (image[i-1, j-1] == strong) or (image[i-1, j] == strong) or (image[i-1, j+1] == strong)):
-                    image[i, j] = strong
-                else:
-                    image[i, j] = 0
-    return image
-
-def canny_edge_detector(image, low_threshold_ratio=0.1, high_threshold_ratio=0.5):
-    """Full Canny edge detection process."""
-    magnitude, orientation = compute_gradients(image)
-    thin_edges = non_maximum_suppression(magnitude, orientation)
-    thresholded_edges = double_threshold(thin_edges, low_threshold_ratio, high_threshold_ratio)
-    final_edges = hysteresis(thresholded_edges)
-    return final_edges
 
 def prepare_input(feature_vector, input_details):
     # Reshape and type-cast the feature vector to match the model's input
@@ -194,20 +64,32 @@ def predict_gesture(feature_vector, interpreter, input_details, output_details):
     output_data = interpreter.get_tensor(output_details[0]['index'])
     return output_data
 
+
+
 def adjust_brightness_based_on_movement(initial_pos, current_pos):
     dy = current_pos[1] - initial_pos[1]  # Change in y position
     # Scale dy to a suitable range for PWM adjustment, e.g., -1 to 1
-    # Assuming the frame height is 480 pixels, and we want -1 to 1 mapping
-    pwm_value = dy / 240.0  # Scale and shift
+    # Assuming the frame height is 480 pixels, and we want -1 to 1 mapping 224
+    pwm_value = dy / (224/2)  # Scale and shift
     pwm_value = np.clip(pwm_value, -1, 1)  # Ensure within range
     # Convert to a suitable PWM duty cycle (0 to 1)
     duty_cycle = (pwm_value + 1) / 2
     led.value = duty_cycle
 
+
+# Function to load and prepare the image
+def prepare_image(image_path):
+    image = cv2.imread(image_path)
+    image = cv2.resize(image, (224, 224))
+    image = preprocess_input(image.astype('float32'))
+    return np.expand_dims(image, axis=0)  # Add batch dimension.
+
+
+
 def capture_frames(interpreter):
 
     interpreter.allocate_tensors()
-
+    
     # Get the model's input and output details
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
@@ -234,22 +116,50 @@ def capture_frames(interpreter):
 
         if prediction==False:
             processed_frame = process_frame(frame)
-            hog_feat = hog_features(processed_frame)
-            frame_diff_result = frame_compare(prev_frame, processed_frame)
-            canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
+            # hog_feat = hog_features(processed_frame)
+            # frame_diff_result = frame_compare(prev_frame, processed_frame)
+            # canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
 
-            combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
+            # # combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
+            # combined_features = extract_features(frame)
+            
 
-            preped_vector = prepare_input(combined_features,input_details)
-            prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
+            # Prepare your input data (this needs to match the training preprocessing)
+            input_data = prepare_image(frame)
 
+            # Set the tensor to point to the input data to be inferred
+            interpreter.set_tensor(input_details[0]['index'], input_data)
+
+            # Run the interpreter
+            interpreter.invoke()
+
+            # Get the output predictions from the model
+            output_data = interpreter.get_tensor(output_details[0]['index'])
+            print(output_data)
+            # update if frame has gesture
+            prediction = output_data
+            # preped_vector = prepare_input(combined_features,input_details)
+            # prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
+            if prediction:
+                bbox = cv2.selectROI("Frame", frame, fromCenter=False, showCrosshair=True)
+                # Track gesture
+                tracker.init(frame, bbox)
+                tracking_active = True
+                initial_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
+                
             ## Gesture detected allow light control 
         else:
+            success, bbox = tracker.update(frame)
 
-            # Change duty cycle
-            adjust_brightness_based_on_movement(initial_pos,current_pos)
+            if success:
+                current_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
+                # Change duty cycle
+                adjust_brightness_based_on_movement(initial_pos,current_pos)
 
             frame_timer+=frame_timer
+
+            if frame_timer == 120:
+                prediction = False
             # # Display Canny
             # canny_edges_3channel = np.stack((canny_edges,)*3, axis=-1)
             # combined_frame = np.hstack((frame, canny_edges_3channel))
@@ -266,8 +176,13 @@ def capture_frames(interpreter):
 # Assign the LED GPIO
 led = PWMLED(18)
 
-# Load the TFLite model
-interpreter = tflite.Interpreter(model_path="path_to_your_model.tflite")
+# Load the TFLite model and allocate tensors
+interpreter = tflite.Interpreter(model_path='model.tflite')
 
+# Initialize a simple tracker, here using a dummy variable
+tracker = cv2.TrackerKCF_create()
+
+# Flag to denote when the gesture is being tracked
+tracking_active = False
 
 capture_frames(interpreter)

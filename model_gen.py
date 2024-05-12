@@ -1,40 +1,44 @@
+import os
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, TimeDistributed, LSTM, Dropout
+from tensorflow.keras.models import Sequential
 
-# Path to your dataset and YOLO configuration
-data_path = 'path/to/your/dataset'
-model_config_path = 'path/to/yolov3.cfg'
-model_weights_path = 'path/to/yolov3.weights'
-classes_path = 'path/to/classes.txt'
 
-# Load YOLO model
-net = cv2.dnn.readNetFromDarknet(model_config_path, model_weights_path)
+# Parameters
+video_height, video_width = 224, 224  # Size to which each video frame will be resized
+max_frames = 30  # Maximum number of frames per video to process
+import os
+import cv2
+import numpy as np
 
-# Read class names
-with open(classes_path, 'r') as f:
-    classes = [line.strip() for line in f.readlines()]
+def load_videos(directory, label):
+    videos = []
+    labels = []
+    print("Loading videos from:", directory)
+    for video_file in os.listdir(directory):
+        video_path = os.path.join(directory, video_file)
+        cap = cv2.VideoCapture(video_path)
+        frames = []
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frame = cv2.resize(frame, (video_width, video_height))
+                frames.append(frame)
+        finally:
+            cap.release()
+        videos.append(frames)
+        labels.append(label)  # Assign the label for each video
+    return videos, labels
 
-# Prepare data loader
-def load_images_and_labels(data_path):
-    # Implement loading of images and their corresponding labels
-    pass
+# Example usage, assuming directories are set up for positive and negative examples
+positive_videos, positive_labels = load_videos(os.path.expanduser("Lights\\gestures\\thumb_up"), 1)
+negative_videos, negative_labels = load_videos(os.path.expanduser("Lights\\gestures\\no_gestures"), 0)
 
-# Data preprocessing
-def preprocess_input(images):
-    # Resize, normalize, etc.
-    pass
+# Combine positive and negative examples
+videos = positive_videos + negative_videos
+labels = positive_labels + negative_labels
 
-# Define training loop
-def train_model():
-    images, labels = load_images_and_labels(data_path)
-    images = preprocess_input(images)
-    
-    # Implement the training logic
-    # Note: actual YOLO training requires setting up the loss functions,
-    # configuring the optimizer, etc. This is a simplification.
-    pass
-
-if __name__ == '__main__':
-    train_model()
