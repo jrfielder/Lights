@@ -70,7 +70,7 @@ def preprocess_image(image):
 
 
 def capture_frames(interpreter):
-
+    print('here0')
     interpreter.allocate_tensors()
     
     # Get the model's input and output details
@@ -89,14 +89,14 @@ def capture_frames(interpreter):
         cap.release()
         cv2.destroyAllWindows()
         return
-
+    print('here1')
     prev_frame = process_frame(frame)
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
+        print('here')
         if prediction==False:
             processed_frame = process_frame(frame)
             # hog_feat = hog_features(processed_frame)
