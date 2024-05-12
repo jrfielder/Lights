@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
 import os
+import tensorflow as tf
 from skimage.feature import hog
+from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from scipy.ndimage import gaussian_filter
+from tensorflow.keras.layers import Dense, Normalization
+from tensorflow.keras.models import Sequential
 from sklearn.model_selection import train_test_split
-from scipy.ndimage import gaussian_filter
 from gpiozero import PWMLED
 import tflite_runtime.interpreter as tflite
 
@@ -16,10 +19,11 @@ def process_frame(frame, sigma=1):
     return normalized
 
 
-def prepare_input(feature_vector, input_details):
+def prepare_input(frame, input_details):
+    frame = cv2.resize(frame, (224, 224))
     # Reshape and type-cast the feature vector to match the model's input
     input_shape = input_details[0]['shape']
-    input_data = np.reshape(feature_vector, input_shape).astype('float32')
+    input_data = np.reshape(frame, input_shape).astype('float32')
     return input_data
 
 def predict_gesture(feature_vector, interpreter, input_details, output_details):
@@ -66,6 +70,7 @@ def preprocess_image(image):
     
     # Add batch dimension
     image = np.expand_dims(image, axis=0)
+    return image
 
 
 
@@ -76,6 +81,11 @@ def capture_frames(interpreter):
     # Get the model's input and output details
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
+
+    # Print the input tensor details
+    print("Input Tensor Details:")
+    for detail in input_details:
+        print(detail)
     prediction = False
     duty_cycle = 0  # Initial duty cycle (0-1) - light set to off
 
@@ -107,8 +117,8 @@ def capture_frames(interpreter):
             # combined_features = extract_features(frame)
 
             # Prepare your input data (this needs to match the training preprocessing)
-            input_data = preprocess_image(frame)
-
+            input_data = prepare_input(frame,input_details)
+            print(input_details[0]['index'])
             # Set the tensor to point to the input data to be inferred
             interpreter.set_tensor(input_details[0]['index'], input_data)
 
