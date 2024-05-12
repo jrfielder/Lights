@@ -90,15 +90,16 @@ def capture_frames(interpreter):
         cv2.destroyAllWindows()
         return
     print('here1')
-    prev_frame = process_frame(frame)
+    # prev_frame = process_frame(frame)
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
         print('here')
+        print(prediction)
         if prediction==False:
-            processed_frame = process_frame(frame)
+            # processed_frame = process_frame(frame)
             # hog_feat = hog_features(processed_frame)
             # frame_diff_result = frame_compare(prev_frame, processed_frame)
             # canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
@@ -150,7 +151,7 @@ def capture_frames(interpreter):
             # if cv2.waitKey(1) & 0xFF == ord('q'):
             #     break
 
-            prev_frame = processed_frame
+            # prev_frame = processed_frame
     finally:
         cap.release()
         cv2.destroyAllWindows()
