@@ -91,70 +91,69 @@ def capture_frames(interpreter):
         return
     print('here1')
     # prev_frame = process_frame(frame)
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-        print('here')
-        print(prediction)
-        if prediction==False:
-            # processed_frame = process_frame(frame)
-            # hog_feat = hog_features(processed_frame)
-            # frame_diff_result = frame_compare(prev_frame, processed_frame)
-            # canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+    print('here')
+    print(prediction)
+    if prediction==False:
+        # processed_frame = process_frame(frame)
+        # hog_feat = hog_features(processed_frame)
+        # frame_diff_result = frame_compare(prev_frame, processed_frame)
+        # canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
 
-            # # combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
-            # combined_features = extract_features(frame)
+        # # combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
+        # combined_features = extract_features(frame)
 
-            # Prepare your input data (this needs to match the training preprocessing)
-            input_data = preprocess_image(frame)
+        # Prepare your input data (this needs to match the training preprocessing)
+        input_data = preprocess_image(frame)
 
-            # Set the tensor to point to the input data to be inferred
-            interpreter.set_tensor(input_details[0]['index'], input_data)
+        # Set the tensor to point to the input data to be inferred
+        interpreter.set_tensor(input_details[0]['index'], input_data)
 
-            # Run the interpreter
-            interpreter.invoke()
+        # Run the interpreter
+        interpreter.invoke()
+        
+        cv2.imshow("Camera", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        # Get the output predictions from the model
+        output_data = interpreter.get_tensor(output_details[0]['index'])
+        print(output_data)
+        # update if frame has gesture
+        prediction = output_data
+        # preped_vector = prepare_input(combined_features,input_details)
+        # prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
+        if prediction:
+            bbox = cv2.selectROI("Frame", frame, fromCenter=False, showCrosshair=True)
+            # Track gesture
+            tracker.init(frame, bbox)
+            tracking_active = True
+            initial_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
+            
+        ## Gesture detected allow light control 
+    else:
+        success, bbox = tracker.update(frame)
 
-            # Get the output predictions from the model
-            output_data = interpreter.get_tensor(output_details[0]['index'])
-            print(output_data)
-            # update if frame has gesture
-            prediction = output_data
-            # preped_vector = prepare_input(combined_features,input_details)
-            # prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
-            if prediction:
-                bbox = cv2.selectROI("Frame", frame, fromCenter=False, showCrosshair=True)
-                # Track gesture
-                tracker.init(frame, bbox)
-                tracking_active = True
-                initial_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
-                
-            ## Gesture detected allow light control 
-        else:
-            success, bbox = tracker.update(frame)
+        if success:
+            current_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
+            # Change duty cycle
+            adjust_brightness_based_on_movement(initial_pos,current_pos)
 
-            if success:
-                current_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
-                # Change duty cycle
-                adjust_brightness_based_on_movement(initial_pos,current_pos)
+        frame_timer+=frame_timer
 
-            frame_timer+=frame_timer
+        if frame_timer == 120:
+            prediction = False
+        # # Display Canny
+        # canny_edges_3channel = np.stack((canny_edges,)*3, axis=-1)
+        # combined_frame = np.hstack((frame, canny_edges_3channel))
 
-            if frame_timer == 120:
-                prediction = False
-            # # Display Canny
-            # canny_edges_3channel = np.stack((canny_edges,)*3, axis=-1)
-            # combined_frame = np.hstack((frame, canny_edges_3channel))
 
-            # cv2.imshow("Camera and Canny Frame", combined_frame)
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     break
 
-            # prev_frame = processed_frame
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
+        # prev_frame = processed_frame
+    cap.release()
+    cv2.destroyAllWindows()
 
 # Assign the LED GPIO
 led = PWMLED(18)
