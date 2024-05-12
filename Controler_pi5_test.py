@@ -50,11 +50,22 @@ def adjust_brightness_based_on_movement(initial_pos, current_pos):
 
 
 # Function to load and prepare the image
-def prepare_image(image_path):
-    image = cv2.imread(image_path)
+def preprocess_image(image):
+    # Resize the image to match the input size expected by the model
     image = cv2.resize(image, (224, 224))
-    image = preprocess_input(image.astype('float32'))
-    return np.expand_dims(image, axis=0)  # Add batch dimension.
+    
+    # Convert the pixel values to float32
+    image = image.astype('float32')
+    
+    # Subtract the mean pixel value of the training dataset
+    mean_pixel = np.array([103.939, 116.779, 123.68])  # Mean pixel values of ImageNet dataset
+    image -= mean_pixel
+    
+    # Scale the pixel values to be in the range [-1, 1]
+    image /= 255.0
+    
+    # Add batch dimension
+    image = np.expand_dims(image, axis=0)
 
 
 
@@ -94,10 +105,9 @@ def capture_frames(interpreter):
 
             # # combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
             # combined_features = extract_features(frame)
-            
 
             # Prepare your input data (this needs to match the training preprocessing)
-            input_data = prepare_image(frame)
+            input_data = preprocess_image(frame)
 
             # Set the tensor to point to the input data to be inferred
             interpreter.set_tensor(input_details[0]['index'], input_data)
@@ -149,7 +159,7 @@ def capture_frames(interpreter):
 led = PWMLED(18)
 
 # Load the TFLite model and allocate tensors
-interpreter = tflite.Interpreter(model_path='model.tflite')
+interpreter = tflite.Interpreter(model_path='/home/john/Desktop/lights/Lights/model.tflite')
 
 # Initialize a simple tracker, here using a dummy variable
 tracker = cv2.TrackerKCF_create()
