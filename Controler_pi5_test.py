@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import os
-import tensorflow as tf
 from skimage.feature import hog
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from scipy.ndimage import gaussian_filter
@@ -13,35 +12,11 @@ from gpiozero import PWMLED
 import tflite_runtime.interpreter as tflite
 
 
-
-# Load a pre-trained VGG16 model without the classifier layers
-base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-
 def process_frame(frame, sigma=1):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = gaussian_filter(gray, sigma=sigma)
     normalized = cv2.normalize(blurred, None, 0, 255, cv2.NORM_MINMAX)
     return normalized
-
-def extract_features(image_path):
-    image = cv2.imread(image_path)
-    image = cv2.resize(image, (224, 224))
-    image_vgg = preprocess_input(image.astype('float32'))
-    features_cnn = base_model.predict(np.expand_dims(image_vgg, axis=0)).flatten()
-
-    # For color images, ensure you are using the right axis for skimage
-    # Here, convert BGR to RGB since skimage expects images in RGB
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # HOG features for color image
-    features_hog, _ = hog(image_rgb, orientations=9, pixels_per_cell=(8, 8),
-                          cells_per_block=(2, 2), visualize=True, channel_axis=-1)
-
-    gray_image = process_frame(image)  # still using grayscale for Canny
-    edges = cv2.Canny(gray_image, 100, 200)
-    features_canny = edges.flatten()
-
-    return np.concatenate([features_cnn, features_hog, features_canny])
 
 
 def prepare_input(feature_vector, input_details):
