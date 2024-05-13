@@ -18,7 +18,6 @@ def process_frame(frame, sigma=1):
     return normalized
 
 def gaussian_kernel(size, sigma=1):
-    """Generates a Gaussian kernel."""
     size = int(size) // 2
     x, y = np.mgrid[-size:size+1, -size:size+1]
     normal = 1 / (2.0 * np.pi * sigma**2)
@@ -26,7 +25,6 @@ def gaussian_kernel(size, sigma=1):
     return g
 
 def apply_gaussian_smoothing(image, kernel_size, sigma):
-    """Applies Gaussian smoothing using a Gaussian kernel."""
     kernel = gaussian_kernel(kernel_size, sigma)
     padded_image = np.pad(image, [(kernel.shape[0]//2, kernel.shape[0]//2), 
                                   (kernel.shape[1]//2, kernel.shape[1]//2)], 

@@ -19,24 +19,31 @@ def process_frame(frame, sigma=1):
     return normalized
 
 def extract_features(image_path):
-    image = cv2.imread(image_path)
-    image = cv2.resize(image, (224, 224))
-    image_vgg = preprocess_input(image.astype('float32'))
-    features_cnn = base_model.predict(np.expand_dims(image_vgg, axis=0)).flatten()
+     
+	 # Read image from path and resize
+	image = cv2.imread(image_path)
+	image = cv2.resize(image, (224, 224))
+     
+	 # CNN feature extraction
+	image_vgg = preprocess_input(image.astype('float32'))
+	features_cnn = base_model.predict(np.expand_dims(image_vgg, axis=0)).flatten()
+	print("CNN features shape:", features_cnn.shape)
+	image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # For color images, ensure you are using the right axis for skimage
-    # Here, convert BGR to RGB since skimage expects images in RGB
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # HOG features for color image
-    features_hog, _ = hog(image_rgb, orientations=9, pixels_per_cell=(8, 8),
-                          cells_per_block=(2, 2), visualize=True, channel_axis=-1)
-
-    gray_image = process_frame(image)  # still using grayscale for Canny
-    edges = cv2.Canny(gray_image, 100, 200)
-    features_canny = edges.flatten()
-
-    return np.concatenate([features_cnn, features_hog, features_canny])
+	# HOG features extraction
+	features_hog, _ = hog(image_rgb, orientations=9, pixels_per_cell=(8, 8),
+							cells_per_block=(2, 2), visualize=True, channel_axis=-1)
+	print("HoG features shape:", features_hog.shape)
+	gray_image = process_frame(image)  # still using grayscale for Canny
+     
+	 # Canny Extraction
+	edges = cv2.Canny(gray_image, 100, 200)
+	features_canny = edges.flatten()
+    # Print the dimensions of Canny features
+	print("Canny features shape:", features_canny.shape)
+	final_feature = np.concatenate([features_cnn, features_hog, features_canny])
+	print("Total features shape:", final_feature.shape)
+	return final_feature
 
 def load_data(directory, label):
     data, labels = [], []
@@ -51,7 +58,7 @@ def load_data(directory, label):
                 print(f"Failed to process {filename}: {e}")
     return np.array(data), np.array(labels)
 
-# Path to the directories
+# Path to the directories with images in them - replace with your images
 gesture_dir = "Lights\\gestures\\thumb_up\\frames"
 nongesture_dir = "Lights\\gestures\\no_gestures\\frames"
 

@@ -1,10 +1,10 @@
-# Import necessary libraries
 import os
 import cv2
 
-# Parameters
+# Parameters for video
 video_height, video_width = 224, 224  # Size to which each video frame will be resized
 
+#  Go through each video in the given directory and split into frames
 def save_video_frames(input_directory, output_directory, label):
     print("Saving video frames from:", input_directory)
     for video_file in os.listdir(input_directory):
@@ -23,6 +23,6 @@ def save_video_frames(input_directory, output_directory, label):
         finally:
             cap.release()
 
-# Example usage, assuming directories are set up for positive and negative examples and output directories exist
+# Split video into images and label
 save_video_frames(os.path.expanduser("Lights\\gestures\\thumb_up"), os.path.expanduser("Lights\\gestures\\thumb_up\\frames"), 1)
 save_video_frames(os.path.expanduser("Lights\\gestures\\no_gestures"), os.path.expanduser("Lights\\gestures\\no_gestures\\frames"), 0)

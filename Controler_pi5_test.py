@@ -8,7 +8,6 @@ from scipy.ndimage import gaussian_filter
 from tensorflow.keras.layers import Dense, Normalization
 from tensorflow.keras.models import Sequential
 from sklearn.model_selection import train_test_split
-from scipy.ndimage import gaussian_filter
 from gpiozero import PWMLED
 import tflite_runtime.interpreter as tflite
 
@@ -66,7 +65,7 @@ def predict_gesture(feature_vector, interpreter, input_details, output_details):
 
 
 
-def adjust_brightness_based_on_movement(initial_pos, current_pos):
+def adjust_brightness_based_on_movement(initial_pos, current_pos,led):
     dy = current_pos[1] - initial_pos[1]  # Change in y position
     # Scale dy to a suitable range for PWM adjustment, e.g., -1 to 1
     # Assuming the frame height is 480 pixels, and we want -1 to 1 mapping 224
@@ -89,12 +88,15 @@ def prepare_image(image_path):
 def capture_frames(interpreter):
 
     interpreter.allocate_tensors()
-    
+    # Assign the LED GPIO
+    led = PWMLED(18)
+
     # Get the model's input and output details
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
     prediction = False
     duty_cycle = 0  # Initial duty cycle (0-1) - light set to off
+    led.value = duty_cycle
 
     # initilize timer
     frame_timer=0
@@ -116,12 +118,6 @@ def capture_frames(interpreter):
 
         if prediction==False:
             processed_frame = process_frame(frame)
-            # hog_feat = hog_features(processed_frame)
-            # frame_diff_result = frame_compare(prev_frame, processed_frame)
-            # canny_edges = cv2.Canny(processed_frame, 80, 150)  # Using OpenCV Canny function
-
-            # # combined_features = np.concatenate([hog_feat, canny_edges.flatten(), frame_diff_result.flatten()])
-            # combined_features = extract_features(frame)
             
 
             # Prepare your input data (this needs to match the training preprocessing)
@@ -138,8 +134,8 @@ def capture_frames(interpreter):
             print(output_data)
             # update if frame has gesture
             prediction = output_data
-            # preped_vector = prepare_input(combined_features,input_details)
-            # prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
+
+            # Grab box position if gesture detected
             if prediction:
                 bbox = cv2.selectROI("Frame", frame, fromCenter=False, showCrosshair=True)
                 # Track gesture
@@ -147,14 +143,14 @@ def capture_frames(interpreter):
                 tracking_active = True
                 initial_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
                 
-            ## Gesture detected allow light control 
+            ## Gesture detected allow light control for 120 frames
         else:
             success, bbox = tracker.update(frame)
 
             if success:
                 current_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
                 # Change duty cycle
-                adjust_brightness_based_on_movement(initial_pos,current_pos)
+                adjust_brightness_based_on_movement(initial_pos,current_pos,led)
 
             frame_timer+=frame_timer
 
@@ -173,8 +169,6 @@ def capture_frames(interpreter):
         cap.release()
         cv2.destroyAllWindows()
 
-# Assign the LED GPIO
-led = PWMLED(18)
 
 # Load the TFLite model and allocate tensors
 interpreter = tflite.Interpreter(model_path='model.tflite')
