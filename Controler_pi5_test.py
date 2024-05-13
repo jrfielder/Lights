@@ -1,3 +1,4 @@
+#!/usr/bin/env python3.9
 import cv2
 import numpy as np
 import os
@@ -9,37 +10,16 @@ from tensorflow.keras.layers import Dense, Normalization
 from tensorflow.keras.models import Sequential
 from sklearn.model_selection import train_test_split
 from gpiozero import PWMLED
-import tflite_runtime.interpreter as tflite
+from tensorflow.keras.models import load_model
 
+# Load a pre-trained VGG16 model without the classifier layers
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
 
 def process_frame(frame, sigma=1):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = gaussian_filter(gray, sigma=sigma)
     normalized = cv2.normalize(blurred, None, 0, 255, cv2.NORM_MINMAX)
     return normalized
-
-
-def prepare_input(frame, input_details):
-    frame = cv2.resize(frame, (224, 224))
-    # Reshape and type-cast the feature vector to match the model's input
-    input_shape = input_details[0]['shape']
-    input_data = np.reshape(frame, input_shape).astype('float32')
-    return input_data
-
-def predict_gesture(feature_vector, interpreter, input_details, output_details):
-    # Prepare the input data
-    input_data = prepare_input(feature_vector, input_details)
-    
-    # Set the input tensor
-    interpreter.set_tensor(input_details[0]['index'], input_data)
-    
-    # Run the inference
-    interpreter.invoke()
-    
-    # Retrieve and return the output data
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-    return output_data
-
 
 
 def adjust_brightness_based_on_movement(initial_pos, current_pos):
@@ -53,42 +33,37 @@ def adjust_brightness_based_on_movement(initial_pos, current_pos):
     led.value = duty_cycle
 
 
-# Function to load and prepare the image
-def preprocess_image(image):
-    # Resize the image to match the input size expected by the model
+def extract_features(image):
     image = cv2.resize(image, (224, 224))
+    image_vgg = preprocess_input(image.astype('float32'))
+    features_cnn = base_model.predict(np.expand_dims(image_vgg, axis=0)).flatten()
+    # print("CNN ",features_cnn.shape)
+    # For color images, ensure you are using the right axis for skimage
+    # Here, convert BGR to RGB since skimage expects images in RGB
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
-    # Convert the pixel values to float32
-    image = image.astype('float32')
-    
-    # Subtract the mean pixel value of the training dataset
-    mean_pixel = np.array([103.939, 116.779, 123.68])  # Mean pixel values of ImageNet dataset
-    image -= mean_pixel
-    
-    # Scale the pixel values to be in the range [-1, 1]
-    image /= 255.0
-    
-    # Add batch dimension
-    image = np.expand_dims(image, axis=0)
-    return image
+    # HOG features for color image
+    features_hog, _ = hog(image_rgb, orientations=9, pixels_per_cell=(8, 8),
+                          cells_per_block=(2, 2), visualize=True, channel_axis=-1)
+    # print("HOG ",features_hog.shape)
+    gray_image = process_frame(image)  # still using grayscale for Canny
+    edges = cv2.Canny(gray_image, 100, 200)
+    features_canny = edges.flatten()
+    # print("canny ",features_canny.shape)
+    final_feature = np.concatenate([features_cnn, features_hog, features_canny])
+    # print(final_feature.shape)
+    return final_feature
 
+def capture_frames():
 
+    # Load the model
+    # Assign the LED GPIO
+    led = PWMLED(18)
 
-def capture_frames(interpreter):
-    print('here0')
-    interpreter.allocate_tensors()
     
-    # Get the model's input and output details
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-
-    # Print the input tensor details
-    print("Input Tensor Details:")
-    for detail in input_details:
-        print(detail)
     prediction = False
-    duty_cycle = 0  # Initial duty cycle (0-1) - light set to off
-
+    duty_cycle = 0.3  # Initial duty cycle (0-1) - light set to off
+    led.value=duty_cycle
     # initilize timer
     frame_timer=0
     """ Captures frames from camera, processes them, and displays results. """
@@ -99,13 +74,12 @@ def capture_frames(interpreter):
         cap.release()
         cv2.destroyAllWindows()
         return
-    print('here1')
     # prev_frame = process_frame(frame)
     while True:
+
         ret, frame = cap.read()
         if not ret:
             break
-        print('here')
         print(prediction)
         if prediction==False:
             # processed_frame = process_frame(frame)
@@ -117,23 +91,26 @@ def capture_frames(interpreter):
             # combined_features = extract_features(frame)
 
             # Prepare your input data (this needs to match the training preprocessing)
-            input_data = prepare_input(frame,input_details)
-            print(input_details[0]['index'])
-            # Set the tensor to point to the input data to be inferred
-            interpreter.set_tensor(input_details[0]['index'], input_data)
+            features = extract_features(frame)
+            # print("Feature ",features.shape)
+            reshaped_input = np.reshape(features, (1, 101508))
+            # pred = model.predict(reshaped_input)
+            # print("pred ",pred)
+            # Normalize features
+            # Normalize features
+            scaler = Normalization()
+            scaler.adapt(features)
+            # # Assuming 'features' is the input data
+            # scaled_features = scaler(features)  # Scale the features
+            # predictions = (pred > 0).astype(int)  # Make predictions
 
-            # Run the interpreter
-            interpreter.invoke()
+            prediction = (model.predict(scaler(reshaped_input)) > 0).astype(int)
+            # cv2.imshow("Camera", frame)
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     break
             
-            cv2.imshow("Camera", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-            
-            # Get the output predictions from the model
-            output_data = interpreter.get_tensor(output_details[0]['index'])
-            print(output_data)
-            # update if frame has gesture
-            prediction = output_data
+            print(prediction)
+
             # preped_vector = prepare_input(combined_features,input_details)
             # prediction = predict_gesture(preped_vector, interpreter, input_details, output_details)
             if prediction:
@@ -162,20 +139,15 @@ def capture_frames(interpreter):
 
 
 
-            # prev_frame = processed_frame
-        cap.release()
-        cv2.destroyAllWindows()
+        # prev_frame = processed_frame
+    cap.release()
+    cv2.destroyAllWindows()
 
-# Assign the LED GPIO
-led = PWMLED(18)
-
-# Load the TFLite model and allocate tensors
-interpreter = tflite.Interpreter(model_path='/home/john/Desktop/lights/Lights/model.tflite')
 
 # Initialize a simple tracker, here using a dummy variable
 tracker = cv2.TrackerKCF_create()
-
+model = load_model('/home/john/Desktop/lights/Lights/my_model.h5')
 # Flag to denote when the gesture is being tracked
 tracking_active = False
 
-capture_frames(interpreter)
+capture_frames()
