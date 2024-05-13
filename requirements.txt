@@ -1,7 +1,8 @@
 numpy
-pandas
-matplotlib
 opencv-python
 scipy
 scikit-learn
 scikit-image
+tensorflow==2.14
+gpiozero
+tflite_runtime

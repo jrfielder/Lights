@@ -120,7 +120,7 @@ def capture_frames():
                 tracking_active = True
                 initial_pos = (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3] // 2)
                 
-            ## Gesture detected allow light control 
+            ## Gesture detected allow light control for 120 frames
         else:
             success, bbox = tracker.update(frame)
 
